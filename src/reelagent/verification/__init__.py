@@ -8,6 +8,13 @@ from reelagent.verification.models import (
     VerificationReport,
 )
 from reelagent.verification.pipeline import VerificationPipeline
+from reelagent.verification.policy import (
+    EvidenceScriptPolicy,
+    EvidenceStrength,
+    ScriptAction,
+    default_script_policy,
+    script_policy_for_verification,
+)
 from reelagent.verification.ports import ClaimVerifier, VerificationEvidenceCollector
 
 __all__ = [
@@ -15,8 +22,13 @@ __all__ = [
     "ClaimVerificationResult",
     "ClaimVerificationVerdict",
     "ClaimVerifier",
+    "EvidenceScriptPolicy",
+    "EvidenceStrength",
+    "ScriptAction",
     "VerificationEvidenceCollector",
     "VerificationOutcome",
     "VerificationPipeline",
     "VerificationReport",
+    "default_script_policy",
+    "script_policy_for_verification",
 ]
