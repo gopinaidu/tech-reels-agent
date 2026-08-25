@@ -1,11 +1,18 @@
 import pytest
 from pydantic import ValidationError
 
+from reelagent.intelligence.models import Evidence
+from reelagent.verification.models import (
+    ClaimVerificationRequest,
+    ClaimVerificationResult,
+    ClaimVerificationVerdict,
+)
 from reelagent.verification.policy import (
     EvidenceScriptPolicy,
     EvidenceStrength,
     ScriptAction,
     default_script_policy,
+    script_policy_for_verification,
 )
 
 
@@ -60,3 +67,71 @@ def test_high_evidence_can_still_be_written_conservatively() -> None:
     )
 
     assert policy.script_action == ScriptAction.QUALIFY
+
+
+def _request() -> ClaimVerificationRequest:
+    return ClaimVerificationRequest(
+        claim_index=0,
+        claim_text="A technical claim",
+        introducing_evidence_ids=("intro-1",),
+    )
+
+
+def _evidence() -> Evidence:
+    # Mapping tests only need evidence presence; provenance validation is covered elsewhere.
+    return Evidence.model_construct(evidence_id="verification-1")
+
+
+def test_supported_verification_maps_to_direct_high_evidence_policy() -> None:
+    result = ClaimVerificationResult(
+        request=_request(),
+        verdict=ClaimVerificationVerdict.SUPPORTED,
+        verification_evidence=(_evidence(),),
+        rationale="Direct authoritative support.",
+    )
+
+    policy = script_policy_for_verification(result)
+
+    assert policy.evidence_strength == EvidenceStrength.HIGH
+    assert policy.script_action == ScriptAction.STATE_DIRECTLY
+
+
+def test_insufficient_verification_with_evidence_maps_to_attribution() -> None:
+    result = ClaimVerificationResult(
+        request=_request(),
+        verdict=ClaimVerificationVerdict.INSUFFICIENT_EVIDENCE,
+        verification_evidence=(_evidence(),),
+        rationale="Evidence exists but does not fully establish the claim.",
+    )
+
+    policy = script_policy_for_verification(result)
+
+    assert policy.evidence_strength == EvidenceStrength.LOW
+    assert policy.script_action == ScriptAction.ATTRIBUTE
+
+
+def test_insufficient_verification_without_evidence_maps_to_removal() -> None:
+    result = ClaimVerificationResult(
+        request=_request(),
+        verdict=ClaimVerificationVerdict.INSUFFICIENT_EVIDENCE,
+        rationale="No independent evidence found.",
+    )
+
+    policy = script_policy_for_verification(result)
+
+    assert policy.evidence_strength == EvidenceStrength.NONE
+    assert policy.script_action == ScriptAction.REMOVE
+
+
+def test_unsupported_verification_maps_to_removal_even_when_evidence_exists() -> None:
+    result = ClaimVerificationResult(
+        request=_request(),
+        verdict=ClaimVerificationVerdict.UNSUPPORTED,
+        verification_evidence=(_evidence(),),
+        rationale="Authoritative evidence contradicts the claim.",
+    )
+
+    policy = script_policy_for_verification(result)
+
+    assert policy.evidence_strength == EvidenceStrength.NONE
+    assert policy.script_action == ScriptAction.REMOVE
