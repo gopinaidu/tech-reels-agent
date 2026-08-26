@@ -4,6 +4,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
 
+from reelagent.verification.models import ClaimVerificationResult, ClaimVerificationVerdict
+
 
 class EvidenceStrength(StrEnum):
     HIGH = "high"
@@ -86,3 +88,18 @@ def default_script_policy(strength: EvidenceStrength) -> EvidenceScriptPolicy:
         script_action=ScriptAction.REMOVE,
         guidance="Remove the factual claim because no usable supporting evidence was found.",
     )
+
+
+def script_policy_for_verification(result: ClaimVerificationResult) -> EvidenceScriptPolicy:
+    """Translate current verification output into a conservative editorial policy.
+
+    The current verifier does not expose a distinct partial-support signal, so MEDIUM is
+    intentionally not inferred here. That level is reserved for a future explicit signal.
+    """
+
+    if result.verdict == ClaimVerificationVerdict.SUPPORTED:
+        return default_script_policy(EvidenceStrength.HIGH)
+    if result.verdict == ClaimVerificationVerdict.INSUFFICIENT_EVIDENCE:
+        strength = EvidenceStrength.LOW if result.verification_evidence else EvidenceStrength.NONE
+        return default_script_policy(strength)
+    return default_script_policy(EvidenceStrength.NONE)
