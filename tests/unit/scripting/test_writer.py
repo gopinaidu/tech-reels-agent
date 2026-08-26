@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -9,17 +10,17 @@ from reelagent.verification.policy import EvidenceStrength, ScriptAction
 
 
 class _FakeClient:
-    def __init__(self, response: dict[str, object]) -> None:
+    def __init__(self, response: dict[str, Any]) -> None:
         self.response = response
-        self.last_payload: dict[str, object] | None = None
+        self.last_payload: dict[str, Any] | None = None
 
     async def generate_json(
         self,
         *,
         system_prompt: str,
-        input_payload: dict[str, object],
-        output_schema: dict[str, object],
-    ) -> dict[str, object]:
+        input_payload: dict[str, Any],
+        output_schema: dict[str, Any],
+    ) -> dict[str, Any]:
         self.last_payload = input_payload
         return self.response
 
@@ -30,7 +31,11 @@ def _directive(
     action: ScriptAction,
     urls: tuple[str, ...] = (),
 ) -> ScriptClaimDirective:
-    strength = EvidenceStrength.HIGH if action == ScriptAction.STATE_DIRECTLY else EvidenceStrength.LOW
+    strength = (
+        EvidenceStrength.HIGH
+        if action == ScriptAction.STATE_DIRECTLY
+        else EvidenceStrength.LOW
+    )
     return ScriptClaimDirective(
         claim_index=index,
         claim_text=f"Claim {index}",
