@@ -1,9 +1,11 @@
+import asyncio
+
 import pytest
 
+from reelagent.intelligence.models import ClaimKind
 from reelagent.scripting.models import ScriptClaimDirective, ScriptClaimPlan
 from reelagent.scripting.writer import LlmScriptWriter, ScriptWriterOutputError
 from reelagent.verification.policy import EvidenceStrength, ScriptAction
-from reelagent.intelligence.models import ClaimKind
 
 
 class _FakeClient:
@@ -40,8 +42,7 @@ def _directive(
     )
 
 
-@pytest.mark.asyncio
-async def test_writer_uses_only_publishable_directives(tmp_path) -> None:
+def test_writer_uses_only_publishable_directives(tmp_path) -> None:
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("Write safely.", encoding="utf-8")
     plan = ScriptClaimPlan(
@@ -67,7 +68,7 @@ async def test_writer_uses_only_publishable_directives(tmp_path) -> None:
     )
 
     writer = LlmScriptWriter(client, prompt_path=prompt)
-    await writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan)
+    asyncio.run(writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan))
 
     assert client.last_payload is not None
     directives = client.last_payload["claim_directives"]
@@ -75,8 +76,7 @@ async def test_writer_uses_only_publishable_directives(tmp_path) -> None:
     assert [item["claim_index"] for item in directives] == [0]
 
 
-@pytest.mark.asyncio
-async def test_writer_requires_attribution_for_low_evidence_claim(tmp_path) -> None:
+def test_writer_requires_attribution_for_low_evidence_claim(tmp_path) -> None:
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("Write safely.", encoding="utf-8")
     plan = ScriptClaimPlan(
@@ -100,11 +100,10 @@ async def test_writer_requires_attribution_for_low_evidence_claim(tmp_path) -> N
     writer = LlmScriptWriter(client, prompt_path=prompt)
 
     with pytest.raises(ScriptWriterOutputError):
-        await writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan)
+        asyncio.run(writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan))
 
 
-@pytest.mark.asyncio
-async def test_writer_rejects_attribution_outside_allowed_evidence(tmp_path) -> None:
+def test_writer_rejects_attribution_outside_allowed_evidence(tmp_path) -> None:
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("Write safely.", encoding="utf-8")
     plan = ScriptClaimPlan(
@@ -130,11 +129,10 @@ async def test_writer_rejects_attribution_outside_allowed_evidence(tmp_path) -> 
     writer = LlmScriptWriter(client, prompt_path=prompt)
 
     with pytest.raises(ScriptWriterOutputError):
-        await writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan)
+        asyncio.run(writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan))
 
 
-@pytest.mark.asyncio
-async def test_writer_accepts_allowed_attribution(tmp_path) -> None:
+def test_writer_accepts_allowed_attribution(tmp_path) -> None:
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("Write safely.", encoding="utf-8")
     allowed = "https://docs.example.com/reference"
@@ -153,6 +151,8 @@ async def test_writer_accepts_allowed_attribution(tmp_path) -> None:
     )
 
     writer = LlmScriptWriter(client, prompt_path=prompt)
-    draft = await writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan)
+    draft = asyncio.run(
+        writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan)
+    )
 
     assert draft.attributions[0].source_url == allowed
