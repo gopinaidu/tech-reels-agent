@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +28,7 @@ class PrototypeVideoRenderer:
                 "ffmpeg is required for prototype video rendering; install it and ensure "
                 "`ffmpeg` is available on PATH"
             )
+        font_file = _find_font_file()
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         beats = (draft.hook, *draft.body, draft.closing)
@@ -41,6 +43,7 @@ class PrototypeVideoRenderer:
                 segment = temp / f"segment-{index}.mp4"
                 _render_segment(
                     ffmpeg=ffmpeg,
+                    font_file=font_file,
                     topic_title=topic_title,
                     text_file=text_file,
                     output_path=segment,
@@ -74,6 +77,7 @@ class PrototypeVideoRenderer:
 def _render_segment(
     *,
     ffmpeg: str,
+    font_file: Path,
     topic_title: str,
     text_file: Path,
     output_path: Path,
@@ -81,11 +85,12 @@ def _render_segment(
 ) -> None:
     title = _escape_drawtext(topic_title)
     text_path = _escape_filter_path(text_file)
+    font_path = _escape_filter_path(font_file)
     filter_graph = (
         "drawbox=x=70:y=180:w=940:h=5:color=white@0.45:t=fill,"
-        f"drawtext=text='{title}':fontcolor=white@0.65:fontsize=38:"
+        f"drawtext=fontfile='{font_path}':text='{title}':fontcolor=white@0.65:fontsize=38:"
         "x=(w-text_w)/2:y=105,"
-        f"drawtext=textfile='{text_path}':fontcolor=white:fontsize=68:"
+        f"drawtext=fontfile='{font_path}':textfile='{text_path}':fontcolor=white:fontsize=68:"
         "line_spacing=18:x=100:y=(h-text_h)/2:"
         "box=1:boxcolor=black@0.25:boxborderw=28"
     )
@@ -107,6 +112,33 @@ def _render_segment(
             "+faststart",
             str(output_path),
         ]
+    )
+
+
+def _find_font_file() -> Path:
+    candidates: list[Path] = []
+    windir = os.environ.get("WINDIR")
+    if windir:
+        windows_fonts = Path(windir) / "Fonts"
+        candidates.extend(
+            [
+                windows_fonts / "segoeui.ttf",
+                windows_fonts / "arial.ttf",
+            ]
+        )
+    candidates.extend(
+        [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        ]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        "no usable font file found for FFmpeg drawtext; install a TrueType font or configure "
+        "a standard Windows/Linux/macOS font location"
     )
 
 
