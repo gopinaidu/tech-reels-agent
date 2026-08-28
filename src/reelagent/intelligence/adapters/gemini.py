@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -57,16 +58,27 @@ class GeminiStructuredLlmClient:
             "Content-Type": "application/json",
             "x-goog-api-key": self._api_key.get_secret_value(),
         }
+
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 transport=self._transport,
             ) as client:
-                response = await client.post(url, headers=headers, json=body)
+                response = await _post_with_one_retry(client, url=url, headers=headers, body=body)
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, TypeError, ValueError) as exc:
-            raise GeminiStructuredLlmError("Gemini structured generation failed") from exc
+        except httpx.HTTPStatusError as exc:
+            response = exc.response
+            detail = _safe_provider_error(response)
+            raise GeminiStructuredLlmError(
+                f"Gemini structured generation failed with HTTP {response.status_code}: {detail}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GeminiStructuredLlmError(
+                f"Gemini structured generation failed with network error: {exc.__class__.__name__}"
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise GeminiStructuredLlmError("Gemini structured generation returned an invalid response") from exc
 
         text = _extract_text(payload)
         try:
@@ -76,6 +88,36 @@ class GeminiStructuredLlmClient:
         if not isinstance(parsed, dict):
             raise GeminiStructuredLlmError("Gemini structured output must be a JSON object")
         return parsed
+
+
+async def _post_with_one_retry(
+    client: httpx.AsyncClient,
+    *,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+) -> httpx.Response:
+    response = await client.post(url, headers=headers, json=body)
+    if response.status_code == 429 or response.status_code >= 500:
+        await asyncio.sleep(0.5)
+        response = await client.post(url, headers=headers, json=body)
+    return response
+
+
+def _safe_provider_error(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text.strip()
+        return text[:500] if text else "no provider error details"
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()[:500]
+    return "no provider error details"
 
 
 def _extract_text(payload: Any) -> str:
