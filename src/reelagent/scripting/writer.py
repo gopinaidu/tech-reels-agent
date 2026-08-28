@@ -10,6 +10,15 @@ from reelagent.scripting.models import ScriptClaimDirective, ScriptClaimPlan
 from reelagent.verification.policy import ScriptAction
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "script_writer_v1.txt"
+_POLICY_LEAKAGE_PHRASES = (
+    "claim directive",
+    "script action",
+    "evidence strength",
+    "verification verdict",
+    "evidence policy",
+    "may be stated directly",
+    "state directly",
+)
 
 
 class ScriptWriterOutputError(RuntimeError):
@@ -73,6 +82,7 @@ class LlmScriptWriter:
         try:
             draft = ReelScriptDraft.model_validate(raw)
             _validate_draft_against_directives(draft, directives)
+            _validate_viewer_facing_copy(draft, topic_title)
             return draft
         except (ValidationError, ValueError) as exc:
             raise ScriptWriterOutputError(
@@ -93,6 +103,7 @@ def _build_payload(
             "use_only_supplied_claims": True,
             "do_not_strengthen_claims": True,
             "attributed_claims_require_explicit_uncertainty": True,
+            "do_not_expose_internal_policy_language": True,
         },
     }
 
@@ -127,3 +138,14 @@ def _validate_draft_against_directives(
             raise ValueError(f"attributed claim {index} requires a source attribution")
         if not supplied <= allowed:
             raise ValueError(f"attributed claim {index} uses a source outside its evidence set")
+
+
+def _validate_viewer_facing_copy(draft: ReelScriptDraft, topic_title: str) -> None:
+    if draft.hook.spoken_text.strip().casefold() == topic_title.strip().casefold():
+        raise ValueError("script hook must not simply repeat the topic title")
+
+    for beat in (draft.hook, *draft.body, draft.closing):
+        normalized = beat.spoken_text.casefold()
+        leaked = [phrase for phrase in _POLICY_LEAKAGE_PHRASES if phrase in normalized]
+        if leaked:
+            raise ValueError(f"script exposes internal policy language: {leaked[0]}")
