@@ -34,7 +34,7 @@ def test_renderer_requires_ffmpeg(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
         )
 
 
-def test_renderer_builds_vertical_h264_segments_with_explicit_font(
+def test_renderer_builds_narrated_animated_vertical_segments(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -55,12 +55,33 @@ def test_renderer_builds_vertical_h264_segments_with_explicit_font(
     segment_commands = [command for command in commands if "lavfi" in command]
     assert len(segment_commands) == 3
     assert all(any("s=1080x1920" in arg for arg in command) for command in segment_commands)
+    assert all(any("flite=textfile=" in arg for arg in command) for command in segment_commands)
     assert all("libx264" in command for command in segment_commands)
+    assert all("aac" in command for command in segment_commands)
     assert all(
         any("fontfile=" in arg and "font.ttf" in arg for arg in command)
         for command in segment_commands
     )
+    assert all(any("fade=t=in" in arg for arg in command) for command in segment_commands)
+    assert all(any("if(lt(t" in arg for arg in command) for command in segment_commands)
     assert commands[-1][-1] == str(tmp_path / "reel.mp4")
+
+
+def test_scene_duration_allows_time_for_narration() -> None:
+    short = prototype_video._scene_duration("Short hook", 3.0)
+    long = prototype_video._scene_duration(" ".join(["word"] * 18), 3.0)
+
+    assert short == 3.0
+    assert long > short
+
+
+def test_wrap_reel_text_breaks_long_copy_into_readable_lines() -> None:
+    wrapped = prototype_video._wrap_reel_text(
+        "Kafka preserves record ordering within a partition but not globally across partitions."
+    )
+
+    assert "\n" in wrapped
+    assert all(len(line) <= 25 for line in wrapped.splitlines())
 
 
 def test_find_font_file_prefers_windows_font(
