@@ -34,12 +34,15 @@ def test_renderer_requires_ffmpeg(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
         )
 
 
-def test_renderer_builds_vertical_h264_segments(
+def test_renderer_builds_vertical_h264_segments_with_explicit_font(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     commands: list[list[str]] = []
+    font = tmp_path / "font.ttf"
+    font.write_bytes(b"fake-font-for-command-test")
     monkeypatch.setattr(prototype_video.shutil, "which", lambda _: "ffmpeg")
+    monkeypatch.setattr(prototype_video, "_find_font_file", lambda: font)
     monkeypatch.setattr(prototype_video, "_run", commands.append)
 
     output = PrototypeVideoRenderer().render(
@@ -53,4 +56,21 @@ def test_renderer_builds_vertical_h264_segments(
     assert len(segment_commands) == 3
     assert all(any("s=1080x1920" in arg for arg in command) for command in segment_commands)
     assert all("libx264" in command for command in segment_commands)
+    assert all(
+        any("fontfile=" in arg and "font.ttf" in arg for arg in command)
+        for command in segment_commands
+    )
     assert commands[-1][-1] == str(tmp_path / "reel.mp4")
+
+
+def test_find_font_file_prefers_windows_font(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fonts = tmp_path / "Fonts"
+    fonts.mkdir()
+    segoe = fonts / "segoeui.ttf"
+    segoe.write_bytes(b"font")
+    monkeypatch.setenv("WINDIR", str(tmp_path))
+
+    assert prototype_video._find_font_file() == segoe
