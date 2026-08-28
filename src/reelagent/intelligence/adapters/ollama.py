@@ -62,25 +62,50 @@ class OllamaStructuredLlmClient:
             raise OllamaStructuredLlmError(
                 f"Could not connect to Ollama at {self._base_url}; ensure Ollama is running"
             ) from exc
+        except httpx.TimeoutException as exc:
+            raise OllamaStructuredLlmError(
+                f"Ollama structured generation timed out after {self._timeout.read} seconds "
+                f"using model {self._model}"
+            ) from exc
         except httpx.HTTPStatusError as exc:
             detail = _safe_error_detail(exc.response)
             raise OllamaStructuredLlmError(
                 f"Ollama structured generation failed with HTTP "
                 f"{exc.response.status_code}: {detail}"
             ) from exc
-        except (httpx.HTTPError, TypeError, ValueError) as exc:
-            raise OllamaStructuredLlmError("Ollama structured generation failed") from exc
+        except json.JSONDecodeError as exc:
+            response_text = response.text.strip()[:500] if "response" in locals() else ""
+            detail = response_text or "empty/non-JSON HTTP response"
+            raise OllamaStructuredLlmError(
+                f"Ollama returned an invalid HTTP JSON response: {detail}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise OllamaStructuredLlmError(
+                f"Ollama HTTP request failed: {type(exc).__name__}: {exc}"
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise OllamaStructuredLlmError(
+                f"Ollama structured response processing failed: {type(exc).__name__}: {exc}"
+            ) from exc
 
         message = payload.get("message") if isinstance(payload, dict) else None
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str) or not content.strip():
-            raise OllamaStructuredLlmError("Ollama response is missing message content")
+            raise OllamaStructuredLlmError(
+                f"Ollama response is missing message content; response keys: "
+                f"{sorted(payload) if isinstance(payload, dict) else type(payload).__name__}"
+            )
         try:
             parsed = json.loads(content)
         except (TypeError, ValueError) as exc:
-            raise OllamaStructuredLlmError("Ollama returned invalid JSON output") from exc
+            preview = content.strip()[:500]
+            raise OllamaStructuredLlmError(
+                f"Ollama returned invalid structured JSON output: {preview}"
+            ) from exc
         if not isinstance(parsed, dict):
-            raise OllamaStructuredLlmError("Ollama structured output must be a JSON object")
+            raise OllamaStructuredLlmError(
+                f"Ollama structured output must be a JSON object, got {type(parsed).__name__}"
+            )
         return parsed
 
 
