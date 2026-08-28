@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Sequence
+from pathlib import Path
 
 from reelagent.config import Settings
 from reelagent.intelligence.llm_runtime import build_structured_llm_client
 from reelagent.prototype import generate_prototype_script
+from reelagent.rendering import PrototypeVideoRenderer
 from reelagent.scripting import LlmScriptWriter, ReelScriptDraft
 from reelagent.verification.models import (
     ClaimVerificationRequest,
@@ -28,12 +30,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "verify":
         return asyncio.run(_verify(args.claim))
-    if args.command == "prototype-script":
+    if args.command in {"prototype-script", "prototype-video"}:
         return asyncio.run(
-            _prototype_script(
+            _prototype(
                 topic_title=args.topic_title,
                 recommended_angle=args.angle,
                 claims=tuple(args.claim),
+                output=Path(args.output) if args.command == "prototype-video" else None,
             )
         )
     parser.print_help()
@@ -51,15 +54,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "prototype-script",
         help="verify supplied claims and generate an evidence-aware prototype reel script",
     )
-    prototype.add_argument("--topic-title", required=True, help="working reel/topic title")
-    prototype.add_argument("--angle", required=True, help="recommended editorial angle")
-    prototype.add_argument(
+    _add_prototype_arguments(prototype)
+
+    video = subparsers.add_parser(
+        "prototype-video",
+        help="generate the evidence-aware prototype script and render a silent 9:16 MP4",
+    )
+    _add_prototype_arguments(video)
+    video.add_argument(
+        "--output",
+        default="prototype-reel.mp4",
+        help="MP4 output path (default: prototype-reel.mp4)",
+    )
+    return parser
+
+
+def _add_prototype_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--topic-title", required=True, help="working reel/topic title")
+    parser.add_argument("--angle", required=True, help="recommended editorial angle")
+    parser.add_argument(
         "--claim",
         required=True,
         action="append",
         help="factual claim to research; repeat --claim for additional claims",
     )
-    return parser
 
 
 async def _verify(claim: str) -> int:
@@ -78,11 +96,12 @@ async def _verify(claim: str) -> int:
     return _EXIT_NEEDS_RESEARCH
 
 
-async def _prototype_script(
+async def _prototype(
     *,
     topic_title: str,
     recommended_angle: str,
     claims: tuple[str, ...],
+    output: Path | None,
 ) -> int:
     try:
         settings = Settings()
@@ -99,11 +118,20 @@ async def _prototype_script(
             verification_pipeline=verification_pipeline,
             script_writer=writer,
         )
-    except Exception as exc:  # Prototype boundary: surface provider/search failures cleanly.
-        print(f"Prototype script failed: {exc}")
+        rendered = None
+        if output is not None:
+            rendered = PrototypeVideoRenderer().render(
+                topic_title=topic_title,
+                draft=draft,
+                output_path=output,
+            )
+    except Exception as exc:  # Prototype boundary: surface provider/search/render failures cleanly.
+        print(f"Prototype failed: {exc}")
         return _EXIT_ERROR
 
     _print_prototype(topic_title, report, draft)
+    if rendered is not None:
+        print(f"\nRendered video: {rendered.resolve()}")
     return _EXIT_OK
 
 
