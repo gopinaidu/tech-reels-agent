@@ -32,10 +32,11 @@ class Settings(BaseSettings):
 
     database_url: str | None = None
 
-    llm_provider: Literal["gemini", "openai"] = "gemini"
+    llm_provider: Literal["gemini", "openai", "ollama"] = "gemini"
     openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    ollama_base_url: str = "http://127.0.0.1:11434"
     brave_search_api_key: SecretStr | None = None
     serper_api_key: SecretStr | None = None
     topic_intelligence_model: str = "gemini-3.1-flash-lite"

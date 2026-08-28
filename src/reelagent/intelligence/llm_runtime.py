@@ -6,6 +6,7 @@ from pydantic import SecretStr
 
 from reelagent.config import Settings
 from reelagent.intelligence.adapters.gemini import GeminiStructuredLlmClient
+from reelagent.intelligence.adapters.ollama import OllamaStructuredLlmClient
 from reelagent.intelligence.adapters.openai import OpenAiStructuredLlmClient
 from reelagent.intelligence.ports import StructuredLlmClient
 
@@ -19,7 +20,12 @@ def build_structured_llm_client(
     *,
     model: str,
 ) -> StructuredLlmClient:
-    provider: Literal["gemini", "openai"] = settings.llm_provider
+    provider: Literal["gemini", "openai", "ollama"] = settings.llm_provider
+    if provider == "ollama":
+        return OllamaStructuredLlmClient(
+            model=model,
+            base_url=settings.ollama_base_url,
+        )
     if provider == "gemini":
         if not _has_secret(settings.gemini_api_key):
             raise LlmRuntimeConfigurationError(
