@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     topic_intelligence_model: str = "gemini-3.1-flash-lite"
     topic_intelligence_min_score: int = Field(default=65, ge=0, le=100)
     verification_model: str = "gemini-3.1-flash-lite"
+    script_writer_model: str = "gemini-3.1-flash-lite"
     verification_search_provider: Literal["serper", "brave"] = "serper"
     verification_search_limit: int = Field(default=5, ge=1, le=10)
 
