@@ -65,9 +65,9 @@ def test_writer_uses_only_publishable_directives(tmp_path) -> None:
     )
     client = _FakeClient(
         {
-            "hook": {"spoken_text": "Hook", "claim_indices": [0]},
+            "hook": {"spoken_text": "Here is the important boundary.", "claim_indices": [0]},
             "body": [{"spoken_text": "Body", "claim_indices": [0]}],
-            "closing": {"spoken_text": "Close", "claim_indices": []},
+            "closing": {"spoken_text": "That boundary matters.", "claim_indices": []},
             "attributions": [],
         }
     )
@@ -95,9 +95,9 @@ def test_writer_requires_attribution_for_low_evidence_claim(tmp_path) -> None:
     )
     client = _FakeClient(
         {
-            "hook": {"spoken_text": "Hook", "claim_indices": [0]},
+            "hook": {"spoken_text": "Reports point to this behavior.", "claim_indices": [0]},
             "body": [{"spoken_text": "Body", "claim_indices": []}],
-            "closing": {"spoken_text": "Close", "claim_indices": []},
+            "closing": {"spoken_text": "Worth watching.", "claim_indices": []},
             "attributions": [],
         }
     )
@@ -122,9 +122,9 @@ def test_writer_rejects_attribution_outside_allowed_evidence(tmp_path) -> None:
     )
     client = _FakeClient(
         {
-            "hook": {"spoken_text": "Hook", "claim_indices": [0]},
+            "hook": {"spoken_text": "Reports point to this behavior.", "claim_indices": [0]},
             "body": [{"spoken_text": "Body", "claim_indices": []}],
-            "closing": {"spoken_text": "Close", "claim_indices": []},
+            "closing": {"spoken_text": "Worth watching.", "claim_indices": []},
             "attributions": [
                 {"claim_index": 0, "source_url": "https://blog.example.com/unsupported"}
             ],
@@ -150,7 +150,7 @@ def test_writer_accepts_allowed_attribution(tmp_path) -> None:
         {
             "hook": {"spoken_text": "Reports suggest this behavior.", "claim_indices": [0]},
             "body": [{"spoken_text": "Body", "claim_indices": []}],
-            "closing": {"spoken_text": "Close", "claim_indices": []},
+            "closing": {"spoken_text": "Keep the uncertainty in mind.", "claim_indices": []},
             "attributions": [{"claim_index": 0, "source_url": allowed}],
         }
     )
@@ -161,3 +161,54 @@ def test_writer_accepts_allowed_attribution(tmp_path) -> None:
     )
 
     assert draft.attributions[0].source_url == allowed
+
+
+def test_writer_rejects_title_only_hook(tmp_path) -> None:
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("Write safely.", encoding="utf-8")
+    plan = ScriptClaimPlan(
+        directives=(_directive(index=0, action=ScriptAction.STATE_DIRECTLY),)
+    )
+    client = _FakeClient(
+        {
+            "hook": {"spoken_text": "Kafka Ordering", "claim_indices": []},
+            "body": [{"spoken_text": "Claim 0", "claim_indices": [0]}],
+            "closing": {"spoken_text": "That is the boundary.", "claim_indices": []},
+            "attributions": [],
+        }
+    )
+
+    writer = LlmScriptWriter(client, prompt_path=prompt)
+
+    with pytest.raises(ScriptWriterOutputError):
+        asyncio.run(
+            writer.write(
+                topic_title="Kafka Ordering",
+                recommended_angle="Angle",
+                claim_plan=plan,
+            )
+        )
+
+
+def test_writer_rejects_internal_policy_language(tmp_path) -> None:
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("Write safely.", encoding="utf-8")
+    plan = ScriptClaimPlan(
+        directives=(_directive(index=0, action=ScriptAction.STATE_DIRECTLY),)
+    )
+    client = _FakeClient(
+        {
+            "hook": {"spoken_text": "Here is the boundary.", "claim_indices": [0]},
+            "body": [{"spoken_text": "Claim 0", "claim_indices": [0]}],
+            "closing": {
+                "spoken_text": "The claim may be stated directly.",
+                "claim_indices": [0],
+            },
+            "attributions": [],
+        }
+    )
+
+    writer = LlmScriptWriter(client, prompt_path=prompt)
+
+    with pytest.raises(ScriptWriterOutputError):
+        asyncio.run(writer.write(topic_title="Topic", recommended_angle="Angle", claim_plan=plan))
