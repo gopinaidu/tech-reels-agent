@@ -109,38 +109,18 @@ class SerperVerificationSearchClient:
             "X-API-KEY": self._api_key.get_secret_value(),
             "Content-Type": "application/json",
         }
-        payload = {"q": search_query, "num": _MAX_RANKING_CANDIDATES}
 
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
-            try:
-                response = await client.post(
-                    _SERPER_SEARCH_URL,
-                    headers=headers,
-                    json=payload,
-                )
-                response.raise_for_status()
-                body = response.json()
-            except httpx.HTTPStatusError as exc:
-                detail = _response_detail(exc.response)
-                raise SerperVerificationSearchError(
-                    f"Serper search returned HTTP {exc.response.status_code}: {detail}"
-                ) from exc
-            except httpx.HTTPError as exc:
-                raise SerperVerificationSearchError(
-                    f"Serper search transport failed: {type(exc).__name__}"
-                ) from exc
-            except ValueError as exc:
-                raise SerperVerificationSearchError(
-                    "Serper search returned invalid JSON"
-                ) from exc
-
-            results = body.get("organic", [])
-            if not isinstance(results, list):
-                return ()
-
+            results = await _search_serper(client, headers, search_query)
             candidates = _trusted_candidates(results, trusted_hosts)
+
+            if not candidates and search_query != fallback_query:
+                fallback_results = await _search_serper(client, headers, fallback_query)
+                candidates = _trusted_candidates(fallback_results, trusted_hosts)
+
             if not candidates:
                 return ()
+
             ranked = await self._rank_candidates(query, candidates, limit)
 
             hits: list[VerificationSearchHit] = []
@@ -223,6 +203,36 @@ class SerperVerificationSearchClient:
             if index not in seen:
                 ordered.append(item)
         return ordered
+
+
+async def _search_serper(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    search_query: str,
+) -> list[Any]:
+    payload = {"q": search_query, "num": _MAX_RANKING_CANDIDATES}
+    try:
+        response = await client.post(
+            _SERPER_SEARCH_URL,
+            headers=headers,
+            json=payload,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = _response_detail(exc.response)
+        raise SerperVerificationSearchError(
+            f"Serper search returned HTTP {exc.response.status_code}: {detail}"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise SerperVerificationSearchError(
+            f"Serper search transport failed: {type(exc).__name__}"
+        ) from exc
+    except ValueError as exc:
+        raise SerperVerificationSearchError("Serper search returned invalid JSON") from exc
+
+    results = body.get("organic", [])
+    return results if isinstance(results, list) else []
 
 
 def _trusted_candidates(
